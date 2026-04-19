@@ -1,0 +1,94 @@
+import copy
+from process_generator import generate_processes
+from ComputeMetrix import format_cycles
+
+# Q4: Online Scheduling
+# Processes arrive one by one in arrival order.
+# The scheduler cannot inspect future processes.
+# Strategy: greedy — assign each arriving process to the processor
+# that will finish it the soonest (earliest finish time wins).
+
+
+PROCESSORS = [
+    {"name": "PA", "speed": 2, "memory": 8  * 1024**3, "finish": 0.0},
+    {"name": "PB", "speed": 2, "memory": 8  * 1024**3, "finish": 0.0},
+    {"name": "PC", "speed": 2, "memory": 8  * 1024**3, "finish": 0.0},
+    {"name": "PD", "speed": 4, "memory": 16 * 1024**3, "finish": 0.0},
+    {"name": "PE", "speed": 4, "memory": 16 * 1024**3, "finish": 0.0},
+    {"name": "PF", "speed": 4, "memory": 16 * 1024**3, "finish": 0.0},
+]
+
+def online_schedule(processes):
+    procs = copy.deepcopy(PROCESSORS)
+
+    # Sort by arrival time — online scheduler sees them in this order only
+    sorted_by_arrival = sorted(processes, key=lambda x: x.arrival_time)
+
+    completion = {}  # pid -> finish time
+
+    for p in sorted_by_arrival:
+        # Only consider processors with enough memory
+        eligible = [pr for pr in procs if pr["memory"] >= p.memory]
+
+        if not eligible:
+            # Can't schedule — note it and move on
+            completion[p.pid] = None
+            continue
+
+        # Greedy: pick processor whose finish time + this job's exec time is smallest
+        # Also account for arrival time — processor can't start before process arrives
+        best = min(eligible,
+                   key=lambda pr: max(pr["finish"], p.arrival_time) + (p.burst / pr["speed"]))
+
+        start = max(best["finish"], p.arrival_time)
+        finish = start + (p.burst / best["speed"])
+        best["finish"] = finish
+        completion[p.pid] = finish
+
+    return completion
+
+def compute_metrics(processes, completion):
+    total_wait = 0
+    total_turn = 0
+    count = 0
+    skipped = 0
+    for p in processes:
+        ft = completion.get(p.pid)
+        if ft is None:
+            skipped += 1
+            continue
+        turnaround = ft - p.arrival_time
+        wait = turnaround - p.burst
+        total_turn += turnaround
+        total_wait += wait
+        count += 1
+    return total_wait / count, total_turn / count, skipped
+
+if __name__ == "__main__":
+    processes = generate_processes(n=250, seed=42)
+
+    # Add arrival times if not present (uniform 0-1000)
+    import random
+    random.seed(42)
+    for p in processes:
+        if not hasattr(p, 'arrival_time'):
+            p.arrival_time = random.randint(0, 1000)
+
+    print("Running Q4 Online Scheduling...\n")
+
+    completion_q4 = online_schedule(processes)
+    wait_q4, turn_q4, skipped = compute_metrics(processes, completion_q4)
+
+    print("--- Q4 RESULTS ---")
+    print(f"Processes scheduled : {250 - skipped} / 250")
+    if skipped:
+        print(f"Skipped (no fit)    : {skipped} processes")
+    print(f"Average Waiting Time  : {format_cycles(wait_q4)}")
+    print(f"Average Turnaround    : {format_cycles(turn_q4)}")
+
+    print("\n--- COMPARISON: Q2 vs Q3 vs Q4 ---")
+    print(f"{'Algorithm':<20} {'Avg Turnaround':>18} {'Avg Wait':>18}")
+    print("-" * 58)
+    print(f"{'Q2 (heterogeneous)':<20} {'22.550T cycles':>18} {'21.248T cycles':>18}")
+    print(f"{'Q3 (memory-aware)':<20} {'see q3 output':>18} {'see q3 output':>18}")
+    print(f"{'Q4 (online)':<20} {format_cycles(turn_q4):>18} {format_cycles(wait_q4):>18}")

@@ -1,64 +1,36 @@
-import random
 import copy
-
-# -------------------------
-# Process Definition
-# -------------------------
-class Process:
-    def __init__(self, pid, burst, memory):
-        self.pid = pid
-        self.burst = burst
-        self.memory = memory
-
-# -------------------------
-# Generate Processes
-# -------------------------
-processes = []
-for i in range(250):
-    burst = random.randint(10**6, 10**8)
-    memory = random.randint(1, 16)
-    processes.append(Process(i, burst, memory))
-
-# -------------------------
-# Metrics Function
-# -------------------------
-def metrics(processes, completion):
-    total_wait = 0
-    total_turn = 0
-
-    for i, p in enumerate(processes):
-        turnaround = completion[i]
-        waiting = turnaround - p.burst
-
-        total_turn += turnaround
-        total_wait += waiting
-
-    return total_wait / len(processes), total_turn / len(processes)
+from process_generator import generate_processes
+from ComputeMetrix import metrics, format_cycles
 
 # -------------------------
 # Q2: Heterogeneous Scheduling
+# Processors: PA PB PC = 2 GHz (slow), PD PE PF = 4 GHz (fast)
+# Strategy: sort by burst descending, assign longest jobs to fastest cores.
+# Fast cores run at 2x speed, so divide burst by 2 for their time cost.
 # -------------------------
 def heterogeneous_schedule(processes):
-
-    slow = [0, 0, 0]   # PA PB PC (2 GHz)
-    fast = [0, 0, 0]   # PD PE PF (4 GHz)
+    slow = [0, 0, 0]   # PA PB PC @ 2 GHz — full burst time
+    fast = [0, 0, 0]   # PD PE PF @ 4 GHz — burst / 2 time
 
     completion = []
 
-    # Sort by burst time (largest first)
-    processes = sorted(processes, key=lambda x: x.burst, reverse=True)
+    # Sort largest burst first so fast cores get the heaviest jobs
+    sorted_procs = sorted(processes, key=lambda x: x.burst, reverse=True)
 
-    for p in processes:
+    # Midpoint of the correct burst range (10M to 10T) = 5*10^11
+    THRESHOLD = 5 * 10**11
 
-        # Assign long jobs to fast cores
-        if p.burst > 5 * 10**7:
+    for p in sorted_procs:
+        if p.burst > THRESHOLD:
+            # Long job — must go to a fast core
             idx = fast.index(min(fast))
             finish = fast[idx] + (p.burst / 2)
             fast[idx] = finish
-
         else:
-            # choose best available core
-            if min(fast) <= min(slow):
+            # Short job — pick whichever core (fast or slow) is free soonest
+            best_fast_time = min(fast) + (p.burst / 2)
+            best_slow_time = min(slow) + p.burst
+            if best_fast_time <= best_slow_time:
                 idx = fast.index(min(fast))
                 finish = fast[idx] + (p.burst / 2)
                 fast[idx] = finish
@@ -69,21 +41,23 @@ def heterogeneous_schedule(processes):
 
         completion.append(finish)
 
-    return completion
+    # Re-align completion list to original process order
+    order = {p.pid: i for i, p in enumerate(sorted_procs)}
+    aligned = [0] * len(processes)
+    for i, p in enumerate(sorted_procs):
+        orig_idx = p.pid  # pid == original index since we generate 0..249
+        aligned[orig_idx] = completion[i]
 
-# -------------------------
-# MAIN EXECUTION
-# -------------------------
+    return aligned
+
 if __name__ == "__main__":
-
+    processes = generate_processes(n=250, seed=42)
     print("Running Q2 Heterogeneous Scheduling...\n")
 
     procs_q2 = copy.deepcopy(processes)
-
     completion_q2 = heterogeneous_schedule(procs_q2)
-
     wait_q2, turn_q2 = metrics(procs_q2, completion_q2)
 
     print("--- Q2 RESULTS ---")
-    print("Average Waiting Time:", wait_q2)
-    print("Average Turnaround Time:", turn_q2)
+    print(f"Average Waiting Time  : {format_cycles(wait_q2)}")
+    print(f"Average Turnaround    : {format_cycles(turn_q2)}")
